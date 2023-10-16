@@ -397,7 +397,7 @@ if __name__ == "__main__":
     while True:
         try:
             url = "a.xlsx"
-            bot_token = "6433740656:AAHvMbB2u3PuBHFYusYKSiB_ccNTxk78Cy4"
+            bot_token = "6662484138:AAGxWyj787ml13fNiXSPsXQamkftYrSmWIA"
             admin_id = 6609625743
             last_time = {}
             antiflood_timer = 1500
