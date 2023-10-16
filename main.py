@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 import re
 import threading
 from time import sleep
+from time import time
 
 class Schedule:
     def __init__(self, url):
@@ -36,6 +37,7 @@ class Schedule:
             for row in rows:
                 self.sch.append([row[1], row[2], row[3], row[4], row[5],
                             row[6], row[7], row[8], row[9], row[10]])
+            
             return self.sch
         
     def get_teachers(self):
@@ -65,10 +67,11 @@ class Schedule:
             table_name = table[0]
             cursor.execute("SELECT * FROM '{}' WHERE \"Преподаватель\"=?".format(table_name), (teacher,))
             for row in cursor.fetchall():
+                #sorted(schedule, key=lambda x: (x[0], x[3]))
                 schedule.append([row[1], row[2], row[3], row[4], row[5],
                             row[6], row[7], row[8], row[9], row[10]])
-
-        return schedule
+    
+        return sorted(schedule, key=lambda x: (x[0], x[3]))
 
     #Хрен знает как я это сделал, но это работает
     def parse_schedule(self):
@@ -204,6 +207,15 @@ class Bot:
 
         @self.bot.message_handler(content_types=["text"])
         def send_message(message):
+
+            #антифлуд
+            if message.chat.id not in last_time:
+                last_time[message.chat.id] = time()
+            elif (time() - last_time[message.chat.id]) * 1000 < antiflood_timer:
+                    self.bot.send_message(message.chat.id, "❌ Слишком частые сообщения!")
+                    return
+            last_time[message.chat.id] = time()
+
             schedule = Schedule(url)
             if message.text == "Расписание для студентов":
                 list = types.InlineKeyboardMarkup(row_width=3)
@@ -385,8 +397,10 @@ if __name__ == "__main__":
     while True:
         try:
             url = "a.xlsx"
-            bot_token = "6662484138:AAGxWyj787ml13fNiXSPsXQamkftYrSmWIA"
+            bot_token = "6433740656:AAHvMbB2u3PuBHFYusYKSiB_ccNTxk78Cy4"
             admin_id = 6609625743
+            last_time = {}
+            antiflood_timer = 1500
             error_chat = 1969649751 # БЕЗ -100
             dbname = "dbase.sqlite"
             bot = Bot(bot_token, admin_id)
