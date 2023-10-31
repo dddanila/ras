@@ -17,6 +17,14 @@ class Schedule:
         for table, df in dfs.items():
             df.to_sql(table, self.db)
     
+        try:
+            cur = self.db.cursor()
+            cur.execute("DROP TABLE 'Лист1'")
+            cur.commit()
+            self.db.close()
+        except:
+            pass
+    
     def get_groups(self):
         cursor = self.db.cursor()
         cursor.execute("""select * from sqlite_master
@@ -57,6 +65,26 @@ class Schedule:
                         unique_teachers.append(teacher[0])
 
         return unique_teachers
+    
+
+    def get_audiences(self):
+        cursor = self.db.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = cursor.fetchall()
+        unique_audiences = []
+        for table in tables:
+            table_name = table[0]
+            cursor.execute(f"SELECT DISTINCT \"№ ауд\" FROM '{table_name}'")
+            audiences = cursor.fetchall()
+            for audience in audiences:
+                if audience[0] not in unique_audiences:
+                    if audience[0] is None or audience[0] == " ":
+                        pass
+                    else:
+                        unique_audiences.append(audience[0])
+
+        return unique_audiences
+    
     #f"SELECT * FROM '{table}' WHERE Преподаватель='{teacher}'"
     def get_teacher_schedule(self, teacher):
         cursor = self.db.cursor()
@@ -159,6 +187,7 @@ class Bot:
             keyboard1 = telebot.types.ReplyKeyboardMarkup(True,False)
             keyboard1.add('Расписание для студентов')
             keyboard1.add('Расписание для преподавателей')
+            keyboard1.add('Расписание по аудиториям')
             if message.chat.id == admin_id:
                 count = database.count_users()
                 lastuser = database.last_user()
@@ -170,6 +199,7 @@ class Bot:
                                     f'Привет. Выбери нужное тебе расписание',
                                 reply_markup=keyboard1)
 
+        @self.bot.message_handler(commands=['admin'])
         @self.bot.message_handler(commands=['admin'])
         def handler_start(message):
             if message.chat.id == self.admin_id:
@@ -187,10 +217,10 @@ class Bot:
 
                 msg = self.bot.send_message(message.chat.id, message.text)
             except:
-                msg = self.bot.send_message(message.chat.id, "❌Ошибка!")
+                print(f"❌Ошибка! 242\n{e}")
 
         @self.bot.message_handler(commands=['global'])
-        def handler_start(message):
+        def main(message):
             if message.chat.id == self.admin_id:
                 msg = self.bot.send_message(message.chat.id,
                                 'Отправь текст для рассылки\nОт 5 символов!')
@@ -201,9 +231,14 @@ class Bot:
         def sending(message):
             text = message.text
             if len(text) > 5:
-                print("РАССЫЛКА")
+                database = DB(dbname)
+                for userid in database.user_list():
+                    sleep(0.1)
+                    self.bot.send_message(userid,
+                                    message.text)
             else:
-                print("РАССЫЛКА ОТМЕНА!")
+                self.bot.send_message(message.chat.id,
+                                    "Рассылка отменена")
 
         @self.bot.message_handler(content_types=["text"])
         def send_message(message):
@@ -227,8 +262,29 @@ class Bot:
                 list = types.InlineKeyboardMarkup()
                 for teacher in schedule.get_teachers():
                     list.add(types.InlineKeyboardButton(text=teacher, callback_data=teacher))
-                                 
                 self.bot.send_message(message.chat.id, "Выберите себя:", reply_markup=list)
+
+            if message.text == "Расписание по аудиториям":
+                mesg = self.bot.send_message(message.chat.id,'Введите номер аудитории:')
+                self.bot.register_next_step_handler(mesg, choice_audience)
+                            
+        def choice_audience(message):
+            audience = message.text
+            #audience_schedule = schedule.get_audience_schedule(audience)
+            schedule = Schedule(url)
+            if schedule.get_audience_schedule(audience) is None:
+                self.bot.send_message(message.chat.id, f"❌ Расписание в аудитории {audience} не найдено!",)
+                return
+            #self.bot.send_message(message.chat.id, str(audience_schedule))
+            menu = types.InlineKeyboardMarkup()
+            menu.add(
+                types.InlineKeyboardButton(text="Неделя", callback_data=audience+"-week"),
+                types.InlineKeyboardButton(text="Завтра", callback_data=audience+"-tomorrow"),
+                types.InlineKeyboardButton(text="Сегодня", callback_data=audience+"-today"),
+                types.InlineKeyboardButton(text="❌Закрыть", callback_data="main_menu"),
+            )
+            self.bot.send_message(message.chat.id, f"Расписание в аудитории: {audience}", reply_markup=menu)
+            
                 
         @self.bot.callback_query_handler(func=lambda call: True)
         def handler_call(call):
@@ -253,6 +309,71 @@ class Bot:
                     message_id=call.message.message_id,
                     text="Выберите вашу группу:",
                     reply_markup=list)
+
+            for audience in schedule.get_audiences():
+                audience = str(audience)
+                week_schedule = schedule.get_audience_schedule(audience)
+                exit = types.InlineKeyboardMarkup()
+                exit.add(types.InlineKeyboardButton(text="❌Закрыть", callback_data="main_menu"))
+                if call.data == audience:
+                    self.bot.edit_message_text(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text=f"Расписание в аудитории: {audience}",
+                        reply_markup=exit
+                    )
+
+
+                if call.data == audience+"-week":
+                    text = f"Аудитория {audience}\n"
+                    last_date = 0
+                    for row in week_schedule:
+                        if row[0] is None:
+                            break
+                        row[0] = str(row[0]).replace(".0", "")
+                        row[1] = str(row[1]).replace(".0", "")
+                        if last_date != row[0] or last_date != row[0]:
+                            text+=f"--------------------------------------\n📅{row[0]}.{row[1]} {row[2]}\n"
+                            last_date = row[0]
+
+                        text+=f"⌛️{row[4]}\n"
+                        text+=f"📗{row[6]}\n👩‍🎓{row[8]}\n🏠Аудитория: {row[9]}\nГруппа: {row[5]}\n\n"
+
+                    self.bot.edit_message_text(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text=text,
+                        reply_markup=exit
+                    )
+            
+                if call.data == audience+"-tomorrow" or call.data == audience+"-today":
+                    try:
+                        text = f"Аудитория {audience}\n"
+                        last_date = 0
+                        for row in week_schedule:
+                            if ((row[0] == date.day+1 and call.data == audience+"-tomorrow") or (row[0] == date.day and call.data == audience+"-today")):
+                                if row[0] is None:
+                                    break
+                                row[0] = str(row[0]).replace(".0", "")
+                                row[1] = str(row[1]).replace(".0", "")
+                                if last_date != row[0]:
+                                    text+=f"--------------------------------------\n📅{row[0]}.{row[1]} {row[2]}\n"
+                                    last_date = row[0]
+                
+                                text+=f"⌛️{row[4]}\n"
+                                text+=f"📗{row[6]}\n👩‍🎓{row[8]}\n🏠Аудитория: {row[9]}\nГруппа: {row[5]}\n\n"
+                        self.bot.edit_message_text(
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            text=text,
+                            reply_markup=exit
+                            )
+                    except:
+                        self.bot.edit_message_text(
+                            chat_id=call.message.chat.id,
+                            message_id=call.message.message_id,
+                            text="❌Расписания нет.",
+                            reply_markup=exit)
 
             for teacher in schedule.get_teachers():
                 week_schedule = schedule.get_teacher_schedule(teacher)
