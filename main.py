@@ -101,7 +101,6 @@ class Schedule:
     
         return sorted(schedule, key=lambda x: (x[0], x[3]))
 
-    #Хрен знает как я это сделал, но это работает
     def parse_schedule(self):
         try:
             while True:
